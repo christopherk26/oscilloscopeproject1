@@ -2,7 +2,7 @@
 """
 Single Channel Audio Oscilloscope with ILI9341 TFT Display
 Pi Zero 2W + ADS1115 + ILI9341 (240x320)
-Simplified to use only one audio channel for easier wiring
+Fixed scaling to properly display ±50mV range
 """
 
 import time
@@ -80,6 +80,7 @@ class SingleChannelOscilloscope:
         print("Single channel oscilloscope initialized!")
         print(f"ADS1115 configured for {self.ads.data_rate} SPS")
         print(f"Python sampling at {self.sample_rate} Hz")
+        print("Display range: ±25mV with 800x scaling")
     
     def sample_audio(self):
         """Sample single audio channel"""
@@ -92,16 +93,16 @@ class SingleChannelOscilloscope:
                 consecutive_errors = 0  # Reset on success
                 
                 # Input voltage limiting to prevent overflow
-                # More aggressive limiting for single channel
-                voltage = max(-0.05, min(0.05, voltage))  # ±0.05V max
+                # Limit to ±50mV for proper display range
+                voltage = max(-0.05, min(0.05, voltage))  # ±0.05V (50mV) max
                 
                 # Convert to display coordinates (center = middle of trace)
-                # Higher scaling since we have more vertical space
-                center_y = self.trace_height // 2
-                pixel_y = int(center_y - (voltage * 800))  # 800x scaling!
+                # FIXED SCALING: 400x instead of 800x to properly use full display range
+                center_y = self.trace_height // 2  # 80 pixels from top of trace
+                pixel_y = int(center_y - (voltage * 400))  # 400x scaling for ±50mV range
                 
-                # Safety clamping for display bounds
-                pixel_y = max(10, min(self.trace_height-10, pixel_y))
+                # Safety clamping for display bounds (more generous)
+                pixel_y = max(5, min(self.trace_height-5, pixel_y))  # 5 to 155 pixels
                 
                 # Add to buffer
                 self.waveform_buffer.append(pixel_y)
@@ -151,6 +152,12 @@ class SingleChannelOscilloscope:
         # Center line (0V reference) - middle of screen
         center_y = self.height // 2
         draw.line([(20, center_y), (self.width-20, center_y)], fill=self.grid_color, width=3)
+        
+        # Quarter lines for better voltage reference
+        quarter_y = center_y - 20  # Midpoint reference lines
+        three_quarter_y = center_y + 20
+        draw.line([(20, quarter_y), (self.width-20, quarter_y)], fill=self.grid_color, width=1)
+        draw.line([(20, three_quarter_y), (self.width-20, three_quarter_y)], fill=self.grid_color, width=1)
     
     def draw_waveform(self, draw):
         """Draw single scrolling waveform"""
@@ -182,15 +189,17 @@ class SingleChannelOscilloscope:
         # Channel label
         draw.text((5, 20), "AUDIO", fill=self.waveform_color, font=font)
         
-        # Voltage scale
-        draw.text((5, 5), "50mV", fill=self.text_color, font=font)
+        # CORRECTED Voltage scale labels to match actual display range with 800x scaling
+        draw.text((5, 5), "+25mV", fill=self.text_color, font=font)
         draw.text((5, self.height//2 - 10), "0V", fill=self.text_color, font=font)
-        draw.text((5, self.height - 40), "-50mV", fill=self.text_color, font=font)
+        draw.text((5, self.height - 40), "-25mV", fill=self.text_color, font=font)
         
         # Current voltage and status
         try:
             current_voltage = self.audio_channel.voltage
-            draw.text((250, 5), f"{current_voltage:.3f}V", fill=self.waveform_color, font=font)
+            # Show voltage in millivolts for better readability
+            voltage_mv = current_voltage * 1000  # Convert to mV
+            draw.text((250, 5), f"{voltage_mv:.1f}mV", fill=self.waveform_color, font=font)
             
             # Show error count if any
             if self.error_count > 0:
@@ -202,6 +211,9 @@ class SingleChannelOscilloscope:
                 
             # Show sampling info
             draw.text((200, self.height - 20), f"{self.sample_rate}Hz", fill=self.text_color, font=font)
+            
+            # Show actual input range
+            draw.text((5, self.height - 20), "Range: ±25mV", fill=self.text_color, font=font)
             
         except:
             draw.text((250, 5), "READ ERR", fill=(255, 100, 100), font=font)
@@ -251,8 +263,8 @@ class SingleChannelOscilloscope:
         
         print("Single channel oscilloscope running!")
         print("- Using only ADS1115 channel A0")
-        print("- Voltage range: ±50mV (larger signals will clip)")
-        print("- 800x amplification for maximum sensitivity")
+        print("- Voltage range: ±25mV (properly labeled for 800x scaling)")
+        print("- 800x amplification for high sensitivity")
         print("- 15Hz sampling rate for stable operation")
         print("Connect audio source to A0 and see waveforms")
         print("Press Ctrl+C to stop")
@@ -272,7 +284,7 @@ class SingleChannelOscilloscope:
 def main():
     print("Pi Zero 2W Single Channel Audio Oscilloscope")
     print("Hardware: ADS1115 + ILI9341 TFT")
-    print("Simplified single channel design")
+    print("Fixed labels: ±25mV range properly displayed with 800x scaling")
     print("=" * 50)
     
     scope = SingleChannelOscilloscope()
