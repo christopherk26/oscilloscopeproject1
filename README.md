@@ -2,6 +2,11 @@
 
 Real-time single-channel audio oscilloscope using Raspberry Pi Zero 2W, ADS1115 ADC, and ILI9341 TFT display.
 
+<img width="662" height="847" alt="Screenshot 2025-07-19 at 1 31 11 PM" src="https://github.com/user-attachments/assets/122dab68-da23-4efa-9a60-0fa74a9529f9" />
+<img width="662" height="480" alt="Screenshot 2025-07-19 at 1 31 25 PM" src="https://github.com/user-attachments/assets/36abc6dd-15a5-4fa7-b587-1685180cf565" />
+
+https://www.youtube.com/watch?v=IcN3dApMLtY
+
 ## Hardware Components
 
 - Raspberry Pi Zero 2W
