@@ -157,6 +157,36 @@ GPIO11  23 24  GPIO8   ← ILI9341 SCK, ILI9341 CS
 - **Ring:** Right channel audio signal (not used in this project)
 - **Sleeve:** Audio ground reference
 
+## Voltage Measurement and Display Flow
+
+### True Voltage Reading
+The oscilloscope displays the **actual voltage** present at the ADS1115 A0 input pin. Here's the complete signal flow:
+
+1. **Audio Device Output** → Produces real voltage (e.g., 25mV peak from phone)
+2. **3.5mm Cable** → Carries voltage through tip (signal) and sleeve (ground)
+3. **ADS1115 ADC** → Measures actual voltage with 16-bit precision
+4. **I2C Communication** → Transfers digital measurement to Pi
+5. **Python Code** → Reads `audio_channel.voltage` (true measured value)
+6. **Display** → Shows actual voltage in mV (e.g., "25.0mV")
+
+### Visual Scaling vs. Voltage Reading
+**Important:** The waveform scaling is separate from voltage measurement:
+
+- **Voltage Reading:** Always shows true input voltage from audio device
+- **Visual Scaling:** 400x amplification for display positioning only
+- **Example:** 25mV input → displays "25.0mV" but waveform position uses 25mV × 400 = 10 pixels from center
+
+### Voltage Display Range
+```
+Input Voltage    Display Reading    Visual Position
+±100mV          "±100.0mV"         ±40 pixels from center (clipping)
+±50mV           "±50.0mV"          ±20 pixels from center  
+±25mV           "±25.0mV"          ±10 pixels from center
+0V              "0.0mV"            Center line
+```
+
+The voltage reading shown on screen is the **unmodified, true voltage** measured by the ADS1115 ADC.
+
 ## Software Installation
 
 ### System Updates
@@ -214,7 +244,7 @@ ads.data_rate = 64  # Set to 64 samples per second
 # Create analog input channel
 audio_channel = AnalogIn(ads, ADS.P0)  # Use pin A0
 
-# Read voltage
+# Read voltage (this is the TRUE voltage from audio device)
 voltage = audio_channel.voltage
 ```
 
@@ -247,7 +277,7 @@ import threading
 def sample_audio(self):
     """Runs continuously in background thread"""
     while self.running:
-        voltage = self.audio_channel.voltage
+        voltage = self.audio_channel.voltage  # TRUE voltage reading
         # Process and store data
         time.sleep(1.0 / self.sample_rate)
 
@@ -274,10 +304,22 @@ sample_thread.start()
 1. **Audio signal** enters through 3.5mm jack tip
 2. **ADS1115** converts analog voltage to 16-bit digital value
 3. **I2C communication** transfers data to Pi at 64 samples/second
-4. **Python processing** scales voltage for display coordinates
+4. **Python processing** reads true voltage and scales for display coordinates
 5. **Circular buffer** stores recent waveform points
 6. **PIL graphics** creates oscilloscope display image
 7. **SPI communication** sends pixel data to ILI9341 at 10 FPS
+
+**Voltage Processing Flow:**
+```python
+# Step 1: Read true voltage from ADC
+voltage = self.audio_channel.voltage  # Example: 0.025V (25mV)
+
+# Step 2: Display true voltage in mV
+voltage_mv = voltage * 1000          # 25.0mV shown on screen
+
+# Step 3: Scale for visual positioning only
+pixel_y = int(center_y - (voltage * 400))  # 25mV × 400 = 10 pixels offset
+```
 
 **Error Handling:**
 - **I2C timeout detection** with automatic ADS1115 reinitialization
@@ -314,6 +356,7 @@ class SingleChannelOscilloscope:
         # Background thread for audio sampling
         # Reads ADS1115 continuously
         # Handles I2C errors gracefully
+        # voltage = self.audio_channel.voltage  # TRUE voltage reading
     
     def draw_grid(self, draw):
         # Draws oscilloscope grid lines
@@ -322,6 +365,12 @@ class SingleChannelOscilloscope:
     def draw_waveform(self, draw):
         # Renders scrolling waveform
         # Connects data points with lines
+        # Uses 400x scaling for visual positioning
+    
+    def draw_labels(self, draw):
+        # Shows voltage labels at correct positions
+        # Displays true voltage reading in mV
+        # Labels positioned at ±40 pixels (400x scaling)
     
     def update_display(self):
         # Background thread for display
@@ -413,7 +462,8 @@ sudo systemctl disable oscilloscope.service
 
 ### Audio Input
 - **Channels:** Single (left channel only)
-- **Input range:** ±50mV (software limited)
+- **Input range:** ±100mV (software limited for optimal display)
+- **True voltage reading:** Unlimited within ADS1115 range (±4.096V)
 - **Sampling rate:** 15 Hz (limited by I2C communication overhead)
 - **Resolution:** 16-bit ADC (theoretical, ~12-bit effective due to noise)
 - **Input impedance:** High (>1MΩ typical for ADS1115)
@@ -421,9 +471,11 @@ sudo systemctl disable oscilloscope.service
 ### Display
 - **Resolution:** 240x320 pixels (landscape mode: 320x240)
 - **Refresh rate:** 10 FPS
-- **Waveform scaling:** 800x voltage amplification
+- **Waveform scaling:** 400x voltage amplification (visual positioning only)
+- **Voltage display:** True measured voltage in mV
 - **Trace height:** 160 pixels
 - **Buffer size:** 140 samples (scrolling window)
+- **Clipping indication:** Visual clipping at ±40 pixels (±100mV with 400x scaling)
 
 ### Performance
 - **ADC data rate:** 64 SPS (hardware sampling rate)
@@ -445,7 +497,15 @@ sudo systemctl disable oscilloscope.service
 3. Connect audio source to 3.5mm input (tip = signal, sleeve = ground)
 4. Observe real-time waveforms on display
 5. Volume changes will be reflected in waveform amplitude
-6. Signals above ±50mV will be clipped and indicated on display
+6. True voltage reading displayed in mV (upper right corner)
+7. Visual clipping occurs at ±40 pixels (±100mV with 400x scaling)
+
+### Understanding the Display
+- **Voltage Reading:** Shows true input voltage from audio device
+- **Waveform Position:** Uses 400x scaling for visual clarity
+- **Grid Lines:** Provide voltage and time references
+- **Labels:** ±100mV labels positioned where visual clipping occurs
+- **CLIP! Indicator:** Appears when input exceeds ±100mV
 
 ### Manual Operation
 ```bash
@@ -475,6 +535,11 @@ sudo shutdown -h now
 - Check ADS1115 I2C connection with `sudo i2cdetect -y 1`
 - Confirm audio source is producing signal
 - Test with known audio source (phone playing music)
+
+**Voltage reading shows but no waveform movement:**
+- Audio signal may be too weak (try increasing volume)
+- Check if signal is DC (oscilloscope optimized for AC signals)
+- Verify 400x scaling is appropriate for signal level
 
 **I2C errors (Remote I/O error):**
 - Verify all wiring connections are secure
@@ -558,14 +623,15 @@ System locations:
 ## Signal Input Considerations
 
 ### Input Voltage Limits
-- **Software limit:** ±50mV (prevents display overflow)
+- **Display optimization:** ±100mV (visual clipping for best waveform visibility)
+- **True voltage reading:** Shows actual input voltage regardless of display clipping
 - **Hardware safe range:** ±4.096V (ADS1115 maximum with gain=1)
 - **Absolute maximum:** ±5V (damage threshold)
-- **Clipping indication:** Displayed when signal exceeds ±50mV
+- **Clipping indication:** "CLIP!" displayed when signal exceeds ±100mV
 
 ### Audio Source Compatibility
 - **Phone/computer headphone output:** Compatible (may need volume adjustment)
-- **Line level signals:** Compatible, may require volume reduction
+- **Line level signals:** Compatible, may require volume reduction for optimal display
 - **Microphone signals:** Usually too weak, may need preamplification
 - **Musical instruments:** Electric guitar/bass output compatible
 
@@ -610,10 +676,13 @@ self.buffer_size = 140      # Waveform buffer length
 ### Voltage Scaling Adjustment
 ```python
 # Increase sensitivity (higher scaling factor)
-pixel_y = int(center_y - (voltage * 1200))  # Was 800
+pixel_y = int(center_y - (voltage * 800))   # Was 400
 
 # Decrease sensitivity (lower scaling factor)  
-pixel_y = int(center_y - (voltage * 400))   # Was 800
+pixel_y = int(center_y - (voltage * 200))   # Was 400
+
+# Note: Also update label positioning to match:
+# top_clip_y = center_display_y - (100mV * scaling_factor / 1000)
 ```
 
 ### Display Customization
@@ -647,7 +716,14 @@ With 15 Hz sampling rate, the maximum accurately representable frequency is 7.5 
 - **LSB (Least Significant Bit)** represents ~125µV at ±4.096V range
 - **Noise floor** typically 2-3 LSBs, or ~250-375µV
 
+### Voltage Measurement Accuracy
+- **ADS1115 accuracy:** ±0.3% typical at room temperature
+- **True voltage display:** Shows actual measured voltage within ADC specifications
+- **Display scaling:** Separate from voltage measurement, affects only visual positioning
+- **Resolution:** Theoretical 125µV per bit, practical ~250-500µV due to noise
+
 ### Display Refresh and Persistence
 - **10 FPS refresh** provides smooth visual experience
 - **Waveform persistence** achieved through circular buffer
 - **Scrolling display** shows temporal evolution of signal
+- **Real-time voltage** updated with each sample for accurate monitoring
